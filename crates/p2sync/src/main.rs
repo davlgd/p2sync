@@ -55,6 +55,9 @@ async fn main() -> anyhow::Result<()> {
             let peer = cli::resolve_peer_id(peer)?;
             run_fetch(path, exclude, port, peer).await?;
         }
+        cli::Commands::Relay { port } => {
+            run_relay(port).await?;
+        }
     }
 
     Ok(())
@@ -287,4 +290,74 @@ async fn run_headless(mut event_rx: mpsc::Receiver<SyncEvent>) {
             }
         }
     }
+}
+
+async fn run_relay(port: u16) -> anyhow::Result<()> {
+    use libp2p::futures::StreamExt;
+    use libp2p::swarm::SwarmEvent;
+    use libp2p::{identify, noise, relay, yamux};
+
+    let keypair = Keypair::generate_ed25519();
+    let local_peer_id = keypair.public().to_peer_id();
+
+    let mut swarm = libp2p::SwarmBuilder::with_existing_identity(keypair)
+        .with_tokio()
+        .with_tcp(
+            libp2p::tcp::Config::default(),
+            noise::Config::new,
+            yamux::Config::default,
+        )?
+        .with_behaviour(|key| {
+            Ok(RelayServerBehaviour {
+                relay: relay::Behaviour::new(key.public().to_peer_id(), Default::default()),
+                identify: identify::Behaviour::new(identify::Config::new(
+                    "/p2sync-relay/0.1.0".to_string(),
+                    key.public(),
+                )),
+            })
+        })?
+        .with_swarm_config(|c| c.with_idle_connection_timeout(std::time::Duration::from_secs(600)))
+        .build();
+
+    let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{port}").parse()?;
+    swarm.listen_on(listen_addr)?;
+
+    eprintln!("Relay node: {local_peer_id}");
+    eprintln!("Waiting for listen addresses...");
+
+    let ctrl_c = tokio::signal::ctrl_c();
+    tokio::pin!(ctrl_c);
+
+    loop {
+        tokio::select! {
+            event = swarm.select_next_some() => {
+                match event {
+                    SwarmEvent::NewListenAddr { address, .. } => {
+                        let full_addr = format!("{address}/p2p/{local_peer_id}");
+                        eprintln!("Relay listening on: {full_addr}");
+                        eprintln!("  Add to .p2sync.toml:");
+                        eprintln!("  [network]");
+                        eprintln!("  relay = \"{full_addr}\"");
+                    }
+                    SwarmEvent::ConnectionEstablished { peer_id, .. } => {
+                        eprintln!("peer connected: {peer_id}");
+                    }
+                    SwarmEvent::ConnectionClosed { peer_id, .. } => {
+                        eprintln!("peer disconnected: {peer_id}");
+                    }
+                    _ => {}
+                }
+            }
+            _ = &mut ctrl_c => {
+                eprintln!("relay shutting down...");
+                return Ok(());
+            }
+        }
+    }
+}
+
+#[derive(libp2p::swarm::NetworkBehaviour)]
+struct RelayServerBehaviour {
+    relay: libp2p::relay::Behaviour,
+    identify: libp2p::identify::Behaviour,
 }

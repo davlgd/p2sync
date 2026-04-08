@@ -79,6 +79,13 @@ pub enum Commands {
         #[arg(long, short = 'p', default_value = "0")]
         port: u16,
     },
+
+    /// Run a relay node for peers behind NAT (no sync, just routing)
+    Relay {
+        /// Port to listen on (default: 4001)
+        #[arg(long, short = 'p', default_value = "4001")]
+        port: u16,
+    },
 }
 
 /// Resolve peer ID from: --peer flag / P2SYNC_PEER_ID env var (handled by clap) > interactive prompt.
