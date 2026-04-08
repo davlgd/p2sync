@@ -204,6 +204,14 @@ pub async fn run(
             }
         }
         net_handle.bootstrap().await?;
+
+        // If the group_id is a PeerId (joining a group), search for it via DHT
+        if let Ok(target_peer) = config.group_id.parse::<PeerId>() {
+            let _ = ui_tx
+                .send(SyncEvent::Log("searching for peer on DHT...".into()))
+                .await;
+            net_handle.search_peer(target_peer).await?;
+        }
     }
 
     let (fs_rx, _guard) = watcher::watch(&config.root_path, config.exclude_patterns.clone())?;

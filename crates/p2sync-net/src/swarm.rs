@@ -1,6 +1,6 @@
 use futures::StreamExt;
 use libp2p::swarm::SwarmEvent;
-use libp2p::{Multiaddr, PeerId, Swarm, gossipsub, mdns, request_response};
+use libp2p::{Multiaddr, PeerId, Swarm, gossipsub, kad, mdns, request_response};
 use tokio::sync::mpsc;
 use tracing::{debug, info, warn};
 
@@ -25,6 +25,9 @@ pub enum Command {
 
     /// Trigger Kademlia bootstrap.
     Bootstrap,
+
+    /// Search for a peer via Kademlia DHT.
+    SearchPeer(PeerId),
 
     /// Subscribe to a sync group topic.
     Subscribe(String),
@@ -123,6 +126,12 @@ impl NetworkHandle {
     /// Trigger Kademlia bootstrap.
     pub async fn bootstrap(&self) -> anyhow::Result<()> {
         self.command_tx.send(Command::Bootstrap).await?;
+        Ok(())
+    }
+
+    /// Search for a peer via Kademlia DHT.
+    pub async fn search_peer(&self, peer: PeerId) -> anyhow::Result<()> {
+        self.command_tx.send(Command::SearchPeer(peer)).await?;
         Ok(())
     }
 
@@ -260,6 +269,13 @@ impl NetworkLoop {
                 Ok(_) => info!("Kademlia bootstrap started"),
                 Err(e) => debug!("Kademlia bootstrap skipped: {e}"),
             },
+            Command::SearchPeer(peer_id) => {
+                debug!("searching DHT for peer {peer_id}");
+                self.swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .get_closest_peers(peer_id);
+            }
             Command::Subscribe(group_id) => {
                 let topic_name = protocol::sync_topic(&group_id);
                 let topic = gossipsub::IdentTopic::new(&topic_name);
@@ -397,6 +413,21 @@ impl NetworkLoop {
                     warn!("invalid gossipsub message: {e}");
                 }
             },
+
+            // Kademlia query results: dial found peers
+            SwarmEvent::Behaviour(SyncBehaviourEvent::Kademlia(
+                kad::Event::OutboundQueryProgressed {
+                    result: kad::QueryResult::GetClosestPeers(Ok(ok)),
+                    ..
+                },
+            )) => {
+                for peer_info in &ok.peers {
+                    debug!("DHT found peer: {}", peer_info.peer_id);
+                    if let Err(e) = self.swarm.dial(peer_info.peer_id) {
+                        debug!("dial from DHT failed: {e}");
+                    }
+                }
+            }
 
             // GossipSub subscription: peer joined our topic = same sync group
             SwarmEvent::Behaviour(SyncBehaviourEvent::Gossipsub(
