@@ -31,9 +31,38 @@ pub struct StorageConfig {
     pub tombstone_ttl_secs: u64,
 }
 
+/// Peer discovery mode.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DiscoveryMode {
+    /// mDNS only, no DHT registration (default).
+    #[default]
+    Lan,
+    /// mDNS + Kademlia DHT, peer is discoverable from Internet.
+    Wan,
+}
+
+/// Relay configuration.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum RelayMode {
+    /// No relay (default).
+    #[default]
+    None,
+    /// Discover relays via DHT (uses third-party nodes).
+    Auto,
+    /// Explicit relay multiaddr.
+    #[serde(untagged)]
+    Explicit(String),
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(default)]
 pub struct NetworkConfig {
+    /// Peer discovery mode: "lan" (mDNS only) or "wan" (mDNS + DHT). Default: "lan".
+    pub discovery: DiscoveryMode,
+    /// Relay mode: "none", "auto" (DHT discovery), or a multiaddr string. Default: "none".
+    pub relay: RelayMode,
     /// Maximum request size in bytes for the CBOR codec (default: 1 MiB).
     pub max_request_size: u64,
     /// Maximum response size in bytes for the CBOR codec (default: 100 MiB).
@@ -94,6 +123,8 @@ impl Default for StorageConfig {
 impl Default for NetworkConfig {
     fn default() -> Self {
         Self {
+            discovery: DiscoveryMode::default(),
+            relay: RelayMode::default(),
             max_request_size: 1024 * 1024,
             max_response_size: 100 * 1024 * 1024,
             request_timeout_secs: 120,
@@ -124,6 +155,14 @@ impl Default for TuiConfig {
 }
 
 impl NetworkConfig {
+    pub fn is_wan(&self) -> bool {
+        self.discovery == DiscoveryMode::Wan
+    }
+
+    pub fn has_relay(&self) -> bool {
+        !matches!(self.relay, RelayMode::None)
+    }
+
     pub fn request_timeout(&self) -> Duration {
         Duration::from_secs(self.request_timeout_secs)
     }
@@ -214,5 +253,76 @@ chunk_size = 131072
         let dir = tempfile::tempdir().unwrap();
         let cfg = load(dir.path());
         assert_eq!(cfg.storage.chunk_size, 256 * 1024);
+    }
+
+    #[test]
+    fn default_discovery_is_lan() {
+        let cfg = P2SyncConfig::default();
+        assert_eq!(cfg.network.discovery, DiscoveryMode::Lan);
+        assert!(!cfg.network.is_wan());
+    }
+
+    #[test]
+    fn default_relay_is_none() {
+        let cfg = P2SyncConfig::default();
+        assert_eq!(cfg.network.relay, RelayMode::None);
+        assert!(!cfg.network.has_relay());
+    }
+
+    #[test]
+    fn discovery_wan_from_toml() {
+        let toml_str = r#"
+[network]
+discovery = "wan"
+"#;
+        let parsed: P2SyncConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.network.discovery, DiscoveryMode::Wan);
+        assert!(parsed.network.is_wan());
+    }
+
+    #[test]
+    fn relay_none_from_toml() {
+        let toml_str = r#"
+[network]
+relay = "none"
+"#;
+        let parsed: P2SyncConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.network.relay, RelayMode::None);
+        assert!(!parsed.network.has_relay());
+    }
+
+    #[test]
+    fn relay_auto_from_toml() {
+        let toml_str = r#"
+[network]
+relay = "auto"
+"#;
+        let parsed: P2SyncConfig = toml::from_str(toml_str).unwrap();
+        assert_eq!(parsed.network.relay, RelayMode::Auto);
+        assert!(parsed.network.has_relay());
+    }
+
+    #[test]
+    fn relay_explicit_from_toml() {
+        let toml_str = r#"
+[network]
+relay = "/ip4/203.0.113.5/tcp/4001/p2p/12D3KooWTest"
+"#;
+        let parsed: P2SyncConfig = toml::from_str(toml_str).unwrap();
+        assert!(
+            matches!(parsed.network.relay, RelayMode::Explicit(ref s) if s.contains("203.0.113.5"))
+        );
+        assert!(parsed.network.has_relay());
+    }
+
+    #[test]
+    fn discovery_and_relay_roundtrip() {
+        let mut cfg = P2SyncConfig::default();
+        cfg.network.discovery = DiscoveryMode::Wan;
+        cfg.network.relay = RelayMode::Explicit("/ip4/1.2.3.4/tcp/4001/p2p/QmTest".into());
+        let toml_str = toml::to_string_pretty(&cfg).unwrap();
+        let parsed: P2SyncConfig = toml::from_str(&toml_str).unwrap();
+        assert_eq!(parsed.network.discovery, DiscoveryMode::Wan);
+        assert!(matches!(parsed.network.relay, RelayMode::Explicit(_)));
     }
 }
