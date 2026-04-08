@@ -1,0 +1,22 @@
+[package]
+name = "p2sync-core"
+description = "Core library for p2sync: chunking, Merkle tree, indexing, conflict resolution"
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+authors.workspace = true
+
+[dependencies]
+blake3 = { workspace = true }
+notify = { workspace = true }
+serde = { workspace = true }
+toml = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+tempfile = { workspace = true }
+tokio = { workspace = true, features = ["test-util", "macros"] }

@@ -1,0 +1,65 @@
+[workspace]
+members = ["crates/p2sync-core", "crates/p2sync-net", "crates/p2sync"]
+resolver = "3"
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.88.0"
+license = "Apache-2.0"
+repository = "https://github.com/davlgd/p2sync"
+authors = ["davlgd"]
+
+[workspace.dependencies]
+# Internal crates
+p2sync-core = { path = "crates/p2sync-core" }
+p2sync-net = { path = "crates/p2sync-net" }
+
+# Networking
+libp2p = { version = "0.56", features = [
+    "tcp",
+    "noise",
+    "yamux",
+    "mdns",
+    "kad",
+    "gossipsub",
+    "request-response",
+    "identify",
+    "macros",
+    "tokio",
+    "cbor",
+] }
+
+# Hashing
+blake3 = "1.8"
+
+# Filesystem
+notify = "8.2"
+
+# TUI
+ratatui = "0.30"
+crossterm = "0.29"
+
+# CLI
+clap = { version = "4.6", features = ["derive", "env"] }
+
+# Async
+tokio = { version = "1.51", features = ["full"] }
+futures = "0.3"
+
+# Serialization
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "1.1"
+dialoguer = "0.12"
+
+# Error handling
+anyhow = "1.0"
+thiserror = "2"
+
+# Logging
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+# Testing
+tempfile = "3"
