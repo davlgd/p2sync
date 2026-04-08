@@ -214,6 +214,31 @@ pub async fn run(
         }
     }
 
+    // Connect to relay if configured
+    match &app_config.network.relay {
+        p2sync_core::config::RelayMode::None => {}
+        p2sync_core::config::RelayMode::Explicit(relay_addr) => {
+            let _ = ui_tx
+                .send(SyncEvent::Log(format!("connecting to relay {relay_addr}")))
+                .await;
+            if let Ok(addr) = relay_addr.parse::<libp2p::Multiaddr>() {
+                // Listen via the relay so we're reachable through it
+                let relay_listen = addr.clone().with(libp2p::multiaddr::Protocol::P2pCircuit);
+                net_handle.listen(relay_listen).await?;
+            } else {
+                warn!("invalid relay multiaddr: {relay_addr}");
+            }
+        }
+        p2sync_core::config::RelayMode::Auto => {
+            let _ = ui_tx
+                .send(SyncEvent::Log(
+                    "relay auto-discovery not yet implemented, using direct connections only"
+                        .into(),
+                ))
+                .await;
+        }
+    }
+
     let (fs_rx, _guard) = watcher::watch(&config.root_path, config.exclude_patterns.clone())?;
 
     let (fs_tx_async, mut fs_rx_async) =
