@@ -20,12 +20,14 @@ p2sync-net = { path = "crates/p2sync-net", version = "0.1.0" }
 # Networking
 libp2p = { version = "0.56", features = [
     "tcp",
+    "dns",
     "noise",
     "yamux",
     "mdns",
     "kad",
     "gossipsub",
     "request-response",
+    "relay",
     "identify",
     "macros",
     "tokio",
