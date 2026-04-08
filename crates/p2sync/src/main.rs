@@ -322,22 +322,26 @@ async fn run_relay(port: u16) -> anyhow::Result<()> {
     let listen_addr: Multiaddr = format!("/ip4/0.0.0.0/tcp/{port}").parse()?;
     swarm.listen_on(listen_addr)?;
 
-    eprintln!("Relay node: {local_peer_id}");
-    eprintln!("Waiting for listen addresses...");
+    eprintln!("p2sync relay node");
+    eprintln!("PeerId: {local_peer_id}");
 
     let ctrl_c = tokio::signal::ctrl_c();
     tokio::pin!(ctrl_c);
+
+    let mut addrs: Vec<String> = Vec::new();
+    let startup_timeout = tokio::time::sleep(std::time::Duration::from_secs(2));
+    tokio::pin!(startup_timeout);
+    let mut startup_done = false;
 
     loop {
         tokio::select! {
             event = swarm.select_next_some() => {
                 match event {
                     SwarmEvent::NewListenAddr { address, .. } => {
-                        let full_addr = format!("{address}/p2p/{local_peer_id}");
-                        eprintln!("Relay listening on: {full_addr}");
-                        eprintln!("  Add to .p2sync.toml:");
-                        eprintln!("  [network]");
-                        eprintln!("  relay = \"{full_addr}\"");
+                        if !address.to_string().contains("127.0.0.1") {
+                            let full_addr = format!("{address}/p2p/{local_peer_id}");
+                            addrs.push(full_addr);
+                        }
                     }
                     SwarmEvent::ConnectionEstablished { peer_id, .. } => {
                         eprintln!("peer connected: {peer_id}");
@@ -348,8 +352,22 @@ async fn run_relay(port: u16) -> anyhow::Result<()> {
                     _ => {}
                 }
             }
+            _ = &mut startup_timeout, if !startup_done => {
+                startup_done = true;
+                if !addrs.is_empty() {
+                    eprintln!();
+                    eprintln!("Add this to .p2sync.toml on peers:");
+                    eprintln!();
+                    eprintln!("  [network]");
+                    for addr in &addrs {
+                        eprintln!("  relay = \"{addr}\"");
+                    }
+                }
+                eprintln!();
+                eprintln!("Press Ctrl+C to stop");
+            }
             _ = &mut ctrl_c => {
-                eprintln!("relay shutting down...");
+                eprintln!("shutting down...");
                 return Ok(());
             }
         }
