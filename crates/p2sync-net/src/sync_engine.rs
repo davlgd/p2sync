@@ -187,7 +187,24 @@ pub async fn run(
 
     net_handle.listen(listen_addr).await?;
     net_handle.subscribe(&config.group_id).await?;
-    // No explicit dial: mDNS discovers the peer and triggers connection automatically.
+
+    // Bootstrap Kademlia if WAN mode is enabled
+    if app_config.network.is_wan() {
+        let _ = ui_tx
+            .send(SyncEvent::Log(
+                "connecting to DHT bootstrap nodes...".into(),
+            ))
+            .await;
+        for addr_str in crate::behaviour::IPFS_BOOTSTRAP_NODES {
+            if let Ok(addr) = addr_str.parse::<libp2p::Multiaddr>() {
+                // Extract PeerId from the multiaddr
+                if let Some(libp2p::multiaddr::Protocol::P2p(peer_id)) = addr.iter().last() {
+                    net_handle.add_kad_address(peer_id, addr.clone()).await?;
+                }
+            }
+        }
+        net_handle.bootstrap().await?;
+    }
 
     let (fs_rx, _guard) = watcher::watch(&config.root_path, config.exclude_patterns.clone())?;
 

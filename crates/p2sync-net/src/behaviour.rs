@@ -5,8 +5,11 @@ use libp2p::StreamProtocol;
 use libp2p::gossipsub;
 use libp2p::kad;
 use libp2p::mdns;
+use libp2p::relay;
 use libp2p::request_response;
 use libp2p::swarm::NetworkBehaviour;
+
+use p2sync_core::config::NetworkConfig;
 
 use crate::protocol::{SyncRequest, SyncResponse};
 
@@ -17,12 +20,14 @@ pub struct SyncBehaviour {
     pub gossipsub: gossipsub::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
+    pub relay_client: relay::client::Behaviour,
 }
 
 /// Build the sync behaviour from a libp2p keypair and network config.
 pub fn build(
     key: &libp2p::identity::Keypair,
-    net_config: &p2sync_core::config::NetworkConfig,
+    net_config: &NetworkConfig,
+    relay_behaviour: relay::client::Behaviour,
 ) -> anyhow::Result<SyncBehaviour> {
     let peer_id = key.public().to_peer_id();
 
@@ -63,13 +68,28 @@ pub fn build(
     // mDNS: local discovery
     let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id)?;
 
-    // Kademlia: WAN discovery (kept for future bootstrap node support)
-    let kademlia = kad::Behaviour::new(peer_id, kad::store::MemoryStore::new(peer_id));
+    // Kademlia: WAN discovery
+    let mut kademlia = kad::Behaviour::new(peer_id, kad::store::MemoryStore::new(peer_id));
+    if net_config.is_wan() {
+        kademlia.set_mode(Some(kad::Mode::Server));
+    } else {
+        // LAN mode: disable periodic bootstrap to avoid warnings
+        kademlia.set_mode(Some(kad::Mode::Client));
+    }
 
     Ok(SyncBehaviour {
         request_response,
         gossipsub,
         mdns,
         kademlia,
+        relay_client: relay_behaviour,
     })
 }
+
+/// IPFS bootstrap nodes resolved via dnsaddr.
+pub const IPFS_BOOTSTRAP_NODES: &[&str] = &[
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmNnooDu7bfjPFoTZYxMNLWUQJyrVwtbZg5gBMjTezGAJN",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmQCU2EcMqAqQPR2i9bChDtGNJchTbq5TbXJJ16u19uLTa",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmbLHAnMoJPWSCR5Zhtx6BHJX9KiKNN6tpvbUcqanj75Nb",
+    "/dnsaddr/bootstrap.libp2p.io/p2p/QmcZf59bWwK5XFi76CZX8cbJ4BhTzzA3gU1ZjYZcYW3dwt",
+];

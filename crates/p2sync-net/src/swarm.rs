@@ -17,6 +17,15 @@ pub enum Command {
     /// Dial a specific peer.
     Dial(PeerId),
 
+    /// Dial a multiaddr directly.
+    DialAddr(Multiaddr),
+
+    /// Add a Kademlia bootstrap address and trigger bootstrap.
+    AddKadAddress(PeerId, Multiaddr),
+
+    /// Trigger Kademlia bootstrap.
+    Bootstrap,
+
     /// Subscribe to a sync group topic.
     Subscribe(String),
 
@@ -97,6 +106,26 @@ impl NetworkHandle {
         Ok(())
     }
 
+    /// Dial a multiaddr directly.
+    pub async fn dial_addr(&self, addr: Multiaddr) -> anyhow::Result<()> {
+        self.command_tx.send(Command::DialAddr(addr)).await?;
+        Ok(())
+    }
+
+    /// Add a Kademlia bootstrap node address.
+    pub async fn add_kad_address(&self, peer: PeerId, addr: Multiaddr) -> anyhow::Result<()> {
+        self.command_tx
+            .send(Command::AddKadAddress(peer, addr))
+            .await?;
+        Ok(())
+    }
+
+    /// Trigger Kademlia bootstrap.
+    pub async fn bootstrap(&self) -> anyhow::Result<()> {
+        self.command_tx.send(Command::Bootstrap).await?;
+        Ok(())
+    }
+
     /// Subscribe to a sync group.
     pub async fn subscribe(&self, group_id: &str) -> anyhow::Result<()> {
         self.command_tx
@@ -163,8 +192,10 @@ pub fn build(
             libp2p::noise::Config::new,
             libp2p::yamux::Config::default,
         )?
-        .with_behaviour(|key| {
-            behaviour::build(key, &net_config_clone)
+        .with_dns()?
+        .with_relay_client(libp2p::noise::Config::new, libp2p::yamux::Config::default)?
+        .with_behaviour(|key, relay_behaviour| {
+            behaviour::build(key, &net_config_clone, relay_behaviour)
                 .map_err(|e| Box::<dyn std::error::Error + Send + Sync>::from(e.to_string()))
         })?
         .with_swarm_config(|c| c.with_idle_connection_timeout(idle_timeout))
@@ -216,6 +247,18 @@ impl NetworkLoop {
             Command::Dial(peer) => match self.swarm.dial(peer) {
                 Ok(_) => debug!("dialing {peer}"),
                 Err(e) => warn!("dial error: {e}"),
+            },
+            Command::DialAddr(addr) => {
+                if let Err(e) = self.swarm.dial(addr) {
+                    warn!("dial addr error: {e}");
+                }
+            }
+            Command::AddKadAddress(peer, addr) => {
+                self.swarm.behaviour_mut().kademlia.add_address(&peer, addr);
+            }
+            Command::Bootstrap => match self.swarm.behaviour_mut().kademlia.bootstrap() {
+                Ok(_) => info!("Kademlia bootstrap started"),
+                Err(e) => debug!("Kademlia bootstrap skipped: {e}"),
             },
             Command::Subscribe(group_id) => {
                 let topic_name = protocol::sync_topic(&group_id);
