@@ -3,6 +3,7 @@ use std::hash::{Hash, Hasher};
 
 use libp2p::StreamProtocol;
 use libp2p::gossipsub;
+use libp2p::identify;
 use libp2p::kad;
 use libp2p::mdns;
 use libp2p::relay;
@@ -18,6 +19,7 @@ use crate::protocol::{SyncRequest, SyncResponse};
 pub struct SyncBehaviour {
     pub request_response: request_response::cbor::Behaviour<SyncRequest, SyncResponse>,
     pub gossipsub: gossipsub::Behaviour,
+    pub identify: identify::Behaviour,
     pub mdns: mdns::tokio::Behaviour,
     pub kademlia: kad::Behaviour<kad::store::MemoryStore>,
     pub relay_client: relay::client::Behaviour,
@@ -65,6 +67,12 @@ pub fn build(
     )
     .map_err(|e| anyhow::anyhow!("gossipsub error: {e}"))?;
 
+    // Identify: required for relay and DHT
+    let identify = identify::Behaviour::new(identify::Config::new(
+        "/p2sync/0.2.0".to_string(),
+        key.public(),
+    ));
+
     // mDNS: local discovery
     let mdns = mdns::tokio::Behaviour::new(mdns::Config::default(), peer_id)?;
 
@@ -73,13 +81,13 @@ pub fn build(
     if net_config.is_wan() {
         kademlia.set_mode(Some(kad::Mode::Server));
     } else {
-        // LAN mode: disable periodic bootstrap to avoid warnings
         kademlia.set_mode(Some(kad::Mode::Client));
     }
 
     Ok(SyncBehaviour {
         request_response,
         gossipsub,
+        identify,
         mdns,
         kademlia,
         relay_client: relay_behaviour,
