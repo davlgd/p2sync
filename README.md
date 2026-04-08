@@ -11,11 +11,12 @@ Sync directories between machines — bidirectionally, in real-time, without any
 - **Bidirectional** — any peer can modify, changes sync everywhere
 - **Multi-peer** — sync across N machines simultaneously
 - **Encrypted** — all connections use Noise protocol (E2E encryption)
-- **LAN discovery** — mDNS for automatic local network discovery
+- **LAN + WAN** — mDNS for local network, Kademlia DHT for Internet discovery
+- **NAT traversal** — optional relay node for peers behind NAT
 - **Efficient** — Merkle tree diffing, configurable chunking, only modified chunks transfer
 - **Conflict resolution** — vector clocks with automatic conflict detection
 - **TUI dashboard** — real-time view of peers, transfers, and events
-- **Configurable** — `.p2sync.toml` for chunk size, timeouts, excludes, and more
+- **Configurable** — `.p2sync.toml` for chunk size, timeouts, discovery mode, relay, and more
 
 ## Quick start
 
@@ -53,7 +54,7 @@ Machine A                                Machine B
 ```
 
 1. Each peer indexes its folder into a Merkle tree (configurable chunk size, Blake3 hashes)
-2. Peers discover each other via mDNS on the local network
+2. Peers discover each other via mDNS (LAN) or Kademlia DHT (WAN)
 3. They compare Merkle tree roots — if different, they walk the tree to find divergent chunks
 4. Only modified chunks are transferred, not entire files
 5. A filesystem watcher detects local changes and notifies all peers via GossipSub
@@ -76,12 +77,47 @@ p2sync fetch <path> --peer <id>         Download from a sync group, then exit
   -e, --exclude <pattern>               Exclude files/directories matching pattern (repeatable)
   -p, --port <port>                      Port to listen on (0 = random)
 
+p2sync relay                            Run a relay node for peers behind NAT
+  -p, --port <port>                      Port to listen on (default: 4001)
+
 Global options:
   --no-tui                               Disable TUI, log to stderr instead
 
 The `--peer` flag accepts a Peer ID from `p2sync share` output. It can also be set
 via the `P2SYNC_PEER_ID` environment variable, or entered interactively when omitted.
 ```
+
+## WAN discovery and relay
+
+By default, p2sync discovers peers on the local network only (mDNS). To enable Internet discovery, set `discovery = "wan"` in `.p2sync.toml`:
+
+```toml
+[network]
+discovery = "wan"    # Enable Kademlia DHT (peer discoverable from Internet)
+```
+
+If both peers are behind NAT, they can't connect directly. Run a relay on a machine with a public IP:
+
+```bash
+p2sync relay -p 4001
+# Outputs the relay address to configure on peers:
+#   relay = "/ip4/<PUBLIC_IP>/tcp/4001/p2p/12D3KooW..."
+```
+
+Then configure the relay on both peers:
+
+```toml
+[network]
+discovery = "wan"
+relay = "/ip4/<PUBLIC_IP>/tcp/4001/p2p/12D3KooW..."
+```
+
+| `discovery` | `relay` | Behavior |
+|---|---|---|
+| `lan` (default) | `none` (default) | LAN only, mDNS discovery |
+| `wan` | `none` | LAN + DHT, direct connections only |
+| `wan` | `"/ip4/.../p2p/..."` | LAN + DHT, relay for NAT traversal |
+| `wan` | `auto` | LAN + DHT, auto-discover relays (third-party nodes) |
 
 ## Configuration
 
@@ -98,6 +134,8 @@ max_file_size = 1073741824 # 1 GB max receivable file size
 tombstone_ttl_secs = 3600  # 1 hour
 
 [network]
+discovery = "lan"                # "lan" or "wan"
+relay = "none"                   # "none", "auto", or a multiaddr
 max_request_size = 1048576       # 1 MiB
 max_response_size = 104857600    # 100 MiB
 request_timeout_secs = 120
@@ -123,7 +161,7 @@ The project is organized as a Cargo workspace:
 
 - **`p2sync-core`** — Chunking, Merkle tree, file indexing, conflict resolution, filesystem watcher, configuration
 - **`p2sync-net`** — libp2p networking: swarm, protocols, peer discovery, data transfer, sync engine
-- **`p2sync`** — CLI, TUI, and headless mode
+- **`p2sync`** — CLI, TUI, headless mode, and relay server
 
 ## License
 

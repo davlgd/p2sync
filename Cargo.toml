@@ -3,7 +3,7 @@ members = ["crates/p2sync-core", "crates/p2sync-net", "crates/p2sync"]
 resolver = "3"
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2024"
 rust-version = "1.90.0"
 license = "Apache-2.0"
@@ -14,8 +14,8 @@ categories = ["command-line-utilities", "network-programming", "filesystem"]
 
 [workspace.dependencies]
 # Internal crates
-p2sync-core = { path = "crates/p2sync-core", version = "0.1.0" }
-p2sync-net = { path = "crates/p2sync-net", version = "0.1.0" }
+p2sync-core = { path = "crates/p2sync-core", version = "0.2.0" }
+p2sync-net = { path = "crates/p2sync-net", version = "0.2.0" }
 
 # Networking
 libp2p = { version = "0.56", features = [

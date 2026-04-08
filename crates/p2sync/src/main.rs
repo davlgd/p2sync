@@ -311,7 +311,7 @@ async fn run_relay(port: u16) -> anyhow::Result<()> {
             Ok(RelayServerBehaviour {
                 relay: relay::Behaviour::new(key.public().to_peer_id(), Default::default()),
                 identify: identify::Behaviour::new(identify::Config::new(
-                    "/p2sync-relay/0.1.0".to_string(),
+                    "/p2sync-relay/0.2.0".to_string(),
                     key.public(),
                 )),
             })
