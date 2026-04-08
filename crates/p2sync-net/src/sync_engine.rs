@@ -188,6 +188,17 @@ pub async fn run(
     net_handle.listen(listen_addr).await?;
     net_handle.subscribe(&config.group_id).await?;
 
+    // Log discovery mode
+    if app_config.network.is_wan() {
+        let _ = ui_tx
+            .send(SyncEvent::Log("discovery: LAN + WAN (DHT)".into()))
+            .await;
+    } else {
+        let _ = ui_tx
+            .send(SyncEvent::Log("discovery: LAN only".into()))
+            .await;
+    }
+
     // Bootstrap Kademlia if WAN mode is enabled
     if app_config.network.is_wan() {
         let _ = ui_tx
@@ -230,9 +241,10 @@ pub async fn run(
             }
         }
         p2sync_core::config::RelayMode::Auto => {
+            warn!("relay = \"auto\" routes traffic through third-party nodes");
             let _ = ui_tx
                 .send(SyncEvent::Log(
-                    "relay auto-discovery not yet implemented, using direct connections only"
+                    "WARNING: relay auto uses third-party nodes — not yet implemented, direct connections only"
                         .into(),
                 ))
                 .await;
